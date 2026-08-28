@@ -26,3 +26,5 @@ Thumbs.db
 # Runtime
 logs/
 *.log
+.screenshots/
+node_modules/

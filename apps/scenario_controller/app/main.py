@@ -29,6 +29,7 @@ from app.state_machine import (
     complete,
     current_run,
     latest_run,
+    revealable_run,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
@@ -144,8 +145,10 @@ async def inject(request: InjectRequest) -> ScenarioRun:
 
 @app.get("/api/scenarios/current", response_model=ScenarioRun | None)
 async def get_current() -> ScenarioRun | None:
+    """The run the UI is working with: still running, or finished but not yet
+    revealed. `current_run` stays stricter and governs the one-at-a-time rule."""
     async with state["engine"].connect() as conn:
-        row = await current_run(conn)
+        row = await revealable_run(conn)
     if row is None:
         return None
     return _to_run(row, reveal_scenario=row["mode"] != "blind")

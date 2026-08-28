@@ -144,5 +144,20 @@ services:
       timeout: 3s
       retries: 12
 
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    environment:
+      OBSERVABILITY_URL: http://observability-service:8004
+      SCENARIO_CONTROLLER_URL: http://scenario-controller:8003
+    ports:
+      - "5173:5173"
+    depends_on:
+      observability-service:
+        condition: service_healthy
+      scenario-controller:
+        condition: service_healthy
+
 volumes:
   pgdata:

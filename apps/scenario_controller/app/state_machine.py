@@ -65,6 +65,16 @@ _CURRENT = sa.text(
     " FROM scenario_run WHERE state = ANY(:states)"
     " ORDER BY started_ts DESC LIMIT 1"
 )
+#: The most recent run that has not been revealed yet. A COMPLETE run is still
+#: revealable -- revealing is what you do *after* the fault has run its course --
+#: so this deliberately differs from `current_run`, which enforces one active
+#: run at a time and must not count a finished one.
+_REVEALABLE = sa.text(
+    "SELECT id, state::text AS state, mode, profile, seed, scenario,"
+    "       started_ts, ended_ts, revealed_ts"
+    " FROM scenario_run WHERE state <> 'REVEALED'"
+    " ORDER BY started_ts DESC LIMIT 1"
+)
 _LATEST = sa.text(
     "SELECT id, state::text AS state, mode, profile, seed, scenario,"
     "       started_ts, ended_ts, revealed_ts"
@@ -93,6 +103,11 @@ _END_GROUND_TRUTH = sa.text(
 
 async def current_run(conn: AsyncConnection) -> dict | None:
     row = (await conn.execute(_CURRENT, {"states": list(ACTIVE_STATES)})).mappings().first()
+    return dict(row) if row else None
+
+
+async def revealable_run(conn: AsyncConnection) -> dict | None:
+    row = (await conn.execute(_REVEALABLE)).mappings().first()
     return dict(row) if row else None
 
 

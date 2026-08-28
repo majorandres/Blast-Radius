@@ -1,0 +1,508 @@
+/* Palette values are the dataviz reference instance, used by role.
+
+   Impact verdicts are STATUS colours (good / warning / critical) and always
+   ship beside a text label and glyph -- never colour alone. `warning` is
+   sub-3:1 on the light surface by design, so the label is what discharges the
+   relief rule.
+
+   Concentration is DIVERGING, not status: SPARED <- PROPORTIONAL ->
+   CONCENTRATED is a polarity around 1.0x, so it uses the blue<->red pair with a
+   neutral grey midpoint. Reusing the status ramp here would imply that being
+   SPARED is "good", which is not what the measure means. */
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --page: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.1);
+
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
+
+  --diverge-high: #d03b3b;
+  --diverge-mid: #f0efec;
+  --diverge-low: #2a78d6;
+
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.1);
+    --diverge-mid: #383835;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.app {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 20px 20px 60px;
+}
+
+header.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.masthead h1 {
+  font-size: 19px;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.masthead .sub {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.card > h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin: 0 0 12px;
+  font-weight: 600;
+}
+
+/* --- health strip: stat tiles with no plot, so no hover layer --- */
+.strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.tile .label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tile .value {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.tile .unit {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 400;
+  margin-left: 3px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+}
+
+.pill .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.pill.healthy {
+  color: var(--status-good);
+}
+
+.pill.incident {
+  color: var(--status-critical);
+}
+
+.pill.recovering {
+  color: var(--status-warning);
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 860px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- charts --- */
+.chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.chart-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+svg.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart .gridline {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+
+.chart .axis {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+
+.chart .tick {
+  fill: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart .line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart .threshold {
+  stroke: var(--status-critical);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  opacity: 0.85;
+}
+
+.chart .threshold-label {
+  fill: var(--status-critical);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.chart .crosshair {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.chart .marker {
+  stroke: var(--surface-1);
+  stroke-width: 2;
+}
+
+.chart .last-label {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-wrap {
+  position: relative;
+}
+
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 10;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* --- topology --- */
+.topology text {
+  font-size: 13px;
+}
+
+.topology .node-name {
+  font-weight: 600;
+  font-size: 16px;
+  fill: var(--text-primary);
+}
+
+.topology .node-state {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.topology .node-meta {
+  fill: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.topology .edge {
+  stroke: var(--axis);
+  stroke-width: 1.5;
+}
+
+.topology .kind {
+  fill: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+/* --- tables --- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--grid);
+  font-variant-numeric: tabular-nums;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+td.dim {
+  color: var(--text-secondary);
+}
+
+.verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.verdict .glyph {
+  font-size: 11px;
+  width: 12px;
+  text-align: center;
+}
+
+.v-affected {
+  color: var(--status-critical);
+}
+
+.v-degraded {
+  color: var(--status-warning);
+}
+
+.v-unaffected {
+  color: var(--status-good);
+}
+
+.v-insufficient {
+  color: var(--muted);
+}
+
+.v-concentrated {
+  color: var(--diverge-high);
+}
+
+.v-spared {
+  color: var(--diverge-low);
+}
+
+.v-proportional {
+  color: var(--text-secondary);
+}
+
+.summary {
+  font-size: 15px;
+  line-height: 1.45;
+  margin: 0 0 14px;
+  padding-left: 12px;
+  border-left: 3px solid var(--series-1);
+}
+
+.summary .quiet {
+  color: var(--text-secondary);
+}
+
+.verdict-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.verdict-headline .domain {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.verdict-headline .meta {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* --- controls --- */
+.controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 7px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
+button.primary {
+  background: var(--series-1);
+  border-color: transparent;
+  color: #fff;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.result {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-top: 12px;
+}
+
+.result.correct {
+  border-left: 4px solid var(--status-good);
+}
+
+.result.incorrect {
+  border-left: 4px solid var(--status-critical);
+}
+
+.result h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.result .detail {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.inline-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--status-warning);
+  color: var(--text-secondary);
+}
+
+.score {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+details.drawer {
+  margin-top: 14px;
+}
+
+details.drawer > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.kv dt {
+  color: var(--muted);
+}
+
+.kv dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 13px;
+}
