@@ -19,6 +19,7 @@ from app.checkout import Order, run_checkout
 from app.config import settings
 from app.dependencies import db
 from app.faults import OrderingFaults, get_faults, set_faults
+from app.traffic.generator import TrafficGenerator
 
 provider = configure_tracing(
     settings.service_name,
@@ -39,7 +40,24 @@ async def lifespan(app: FastAPI):
         settings.database_url_app, settings.db_pool_size, settings.db_pool_timeout
     )
     state["rng"] = random.Random(settings.traffic_seed)
+
+    if settings.traffic_enabled:
+        generator = TrafficGenerator(
+            engine=state["engine"],
+            promo_client=state["promo"],
+            promo_base_url=settings.promo_provider_url,
+            promo_timeout_ms=settings.promo_client_timeout_ms,
+            rate_per_min=settings.traffic_base_rate_per_min,
+            max_concurrency=settings.traffic_max_concurrency,
+            seed=settings.traffic_seed,
+        )
+        generator.start()
+        state["generator"] = generator
+
     yield
+
+    if "generator" in state:
+        await state["generator"].stop()
     await state["promo"].aclose()
     await state["engine"].dispose()
     provider.shutdown()
