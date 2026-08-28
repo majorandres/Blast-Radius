@@ -65,6 +65,28 @@ services:
       timeout: 3s
       retries: 12
 
+  scenario-controller:
+    build:
+      context: .
+      dockerfile: apps/scenario_controller/Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8003
+    environment:
+      DATABASE_URL_SCENARIO: ${DATABASE_URL_SCENARIO}
+      ORDERING_APP_URL: http://ordering-app:8001
+      PROMO_PROVIDER_URL: ${PROMO_PROVIDER_URL}
+      OBSERVABILITY_URL: http://observability-service:8004
+      PROFILE: ${PROFILE}
+    ports:
+      - "8003:8003"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8003/readyz').status==200 else 1)\""]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
   promo-provider:
     build:
       context: .

@@ -28,3 +28,4 @@ packages = ["app"]
 asyncio_mode = "auto"
 pythonpath = ["tests"]
 testpaths = ["tests"]
+markers = ["slow: drives a live scenario end to end; takes minutes"]

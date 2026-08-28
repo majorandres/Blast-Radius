@@ -116,7 +116,7 @@ def self_time_ms(span: SpanNode, children: list[SpanNode]) -> float:
 
 
 # --- §12.3 error path ------------------------------------------------------
-def attribute_error(tree: TraceTree) -> tuple[int | None, str]:
+def culprit_error(tree: TraceTree) -> SpanNode | None:
     """Walk down the connected chain of blocking ERROR spans.
 
     Three properties, each load-bearing:
@@ -129,16 +129,21 @@ def attribute_error(tree: TraceTree) -> tuple[int | None, str]:
     """
     node = tree.root
     if node is None:
-        return None, "error"
+        return None
     while True:
         failing = [c for c in tree.kids(node) if c.status == "ERROR" and c.blocking]
         if not failing:
-            return node.domain_id, "error"
+            return node
         node = max(failing, key=lambda c: c.duration_ms)
 
 
+def attribute_error(tree: TraceTree) -> tuple[int | None, str]:
+    culprit = culprit_error(tree)
+    return (culprit.domain_id if culprit else None), "error"
+
+
 # --- §12.4 latency path ----------------------------------------------------
-def attribute_latency(tree: TraceTree) -> tuple[int | None, str]:
+def culprit_latency(tree: TraceTree) -> SpanNode | None:
     """Blame the span that owns the most wall time, if it owns enough of it.
 
     Below the dominance floor the trace has no single cause -- it was slow all
@@ -147,17 +152,22 @@ def attribute_latency(tree: TraceTree) -> tuple[int | None, str]:
     """
     root = tree.root
     if root is None or root.duration_ms <= 0:
-        return None, "latency"
+        return None
 
     times = {s.span_id: self_time_ms(s, tree.kids(s)) for s in tree.spans if s.blocking}
     if not times:
-        return None, "latency"
+        return None
 
     span_by_id = {s.span_id: s for s in tree.spans}
     span_id, best = max(times.items(), key=lambda kv: kv[1])
     if best / root.duration_ms < DOMINANCE:
-        return None, "latency"
-    return span_by_id[span_id].domain_id, "latency"
+        return None
+    return span_by_id[span_id]
+
+
+def attribute_latency(tree: TraceTree) -> tuple[int | None, str]:
+    culprit = culprit_latency(tree)
+    return (culprit.domain_id if culprit else None), "latency"
 
 
 # --- §12.5 aggregation -----------------------------------------------------
@@ -172,21 +182,27 @@ class AttributionResult:
     unattributed: int
     counts: dict[int, int]
     paths: dict[str, int]
+    culprit_operations: dict[str, int]
+    culprit_kinds: dict[str, int]
 
 
 def aggregate(trees: list[TraceTree]) -> AttributionResult:
     counts: Counter[int] = Counter()
     paths: Counter[str] = Counter()
+    operations: Counter[str] = Counter()
+    kinds: Counter[str] = Counter()
     unattributed = 0
 
     for tree in trees:
-        walk = attribute_error if tree.root_status == "ERROR" else attribute_latency
-        domain_id, path = walk(tree)
-        paths[path] += 1
-        if domain_id is None:
+        error_path = tree.root_status == "ERROR"
+        culprit = culprit_error(tree) if error_path else culprit_latency(tree)
+        paths["error" if error_path else "latency"] += 1
+        if culprit is None:
             unattributed += 1
         else:
-            counts[domain_id] += 1
+            counts[culprit.domain_id] += 1
+            operations[culprit.operation] += 1
+            kinds[culprit.span_kind] += 1
 
     total = len(trees)
     ranked = counts.most_common()
@@ -210,6 +226,8 @@ def aggregate(trees: list[TraceTree]) -> AttributionResult:
         unattributed=unattributed,
         counts=dict(counts),
         paths=dict(paths),
+        culprit_operations=dict(operations),
+        culprit_kinds=dict(kinds),
     )
 
 

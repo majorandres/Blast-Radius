@@ -28,7 +28,7 @@ _rng = random.Random(1337)
 provider = configure_tracing(
     settings.service_name,
     settings.otlp_endpoint,
-    # Dual export (v1.2 ง7.1): genuine OTLP to Jaeger, custom JSON projection
+    # Dual export (v1.2 ยง7.1): genuine OTLP to Jaeger, custom JSON projection
     # to the detector. Two pipelines, one TracerProvider, one truthful resource.
     extra_exporters=[BlastRadiusSpanExporter(settings.observability_ingest_url, settings.service_name)],
 )
@@ -77,7 +77,7 @@ async def apply_promo(
     ) as span:
         # A timeout is modelled as an unbounded stall, not an early return. The
         # client aborts at PROMO_CLIENT_TIMEOUT_MS and emits no server span at
-        # all, which is the CC-A path attribution has to survive (v1.2 ง6.3).
+        # all, which is the CC-A path attribution has to survive (v1.2 ยง6.3).
         if _rng.random() < faults.timeout_prob:
             await asyncio.sleep(_TIMEOUT_STALL_S)
 

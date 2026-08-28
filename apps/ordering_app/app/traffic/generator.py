@@ -23,6 +23,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.checkout import Order, run_checkout
+from app.traffic.load import gauge
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ class TrafficGenerator:
         self._max_concurrency = max_concurrency
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._rng = random.Random(seed)
+        gauge.capacity = max_concurrency
         self._task: asyncio.Task[None] | None = None
         self._tasks: set[asyncio.Task[None]] = set()
 
@@ -98,6 +100,9 @@ class TrafficGenerator:
     async def _one(self) -> None:
         order = draw_order(self._rng)
         async with self._semaphore:
+            # Counted explicitly rather than derived from semaphore internals,
+            # so the herrings read an exact number at both edges.
+            gauge.admit()
             try:
                 await run_checkout(
                     order,
@@ -111,3 +116,5 @@ class TrafficGenerator:
                 # A checkout that blows up must not kill the generator. The
                 # failure is already recorded on the trace.
                 log.exception("checkout raised")
+            finally:
+                gauge.release()

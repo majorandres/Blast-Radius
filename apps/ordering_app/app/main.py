@@ -24,7 +24,7 @@ from app.traffic.generator import TrafficGenerator
 provider = configure_tracing(
     settings.service_name,
     settings.otlp_endpoint,
-    # Dual export (v1.2 ง7.1): genuine OTLP to Jaeger, custom JSON projection
+    # Dual export (v1.2 ยง7.1): genuine OTLP to Jaeger, custom JSON projection
     # to the detector. Two pipelines, one TracerProvider, one truthful resource.
     extra_exporters=[BlastRadiusSpanExporter(settings.observability_ingest_url, settings.service_name)],
 )
@@ -103,8 +103,21 @@ async def read_faults() -> OrderingFaults:
 
 
 @app.get("/healthz")
-async def healthz() -> dict[str, str]:
-    return {"status": "ok", "service": settings.service_name}
+async def healthz() -> dict[str, object]:
+    """Includes the load gauge the red herrings read, so their calibration can
+    be checked against real concurrency rather than assumed."""
+    from app.dependencies.herrings import analytics_failure_prob, load_factor
+    from app.traffic.load import gauge
+
+    return {
+        "status": "ok",
+        "service": settings.service_name,
+        "in_flight": gauge.in_flight,
+        "smoothed_in_flight": round(gauge.smoothed, 2),
+        "capacity": gauge.capacity,
+        "load_factor": round(load_factor(), 3),
+        "analytics_failure_prob": round(analytics_failure_prob(), 4),
+    }
 
 
 @app.get("/readyz")

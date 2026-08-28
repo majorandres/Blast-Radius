@@ -45,7 +45,7 @@ from opentelemetry import trace
 from opentelemetry.trace import SpanKind, Status, StatusCode
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.dependencies import db, payment
+from app.dependencies import db, herrings, payment
 from app.dependencies.promo_client import PromoUnavailable, apply_promo
 
 tracer = trace.get_tracer("ordering-app")
@@ -53,7 +53,6 @@ tracer = trace.get_tracer("ordering-app")
 # Healthy baselines. A ~400ms p95 is the v1.2 §11 target, and these sum to it.
 VALIDATE_MS = (4, 12)
 PRICING_MS = (10, 22)
-LOYALTY_MS = (6, 11)
 ANALYTICS_MS = (3, 8)
 CONFIRMATION_MS = (2, 6)
 
@@ -108,12 +107,13 @@ async def run_checkout(
 
             with blastradius_span(tracer, OP_PRICING, domain=DOMAIN_ORDERING_APP):
                 await _sleep(rng, PRICING_MS)
-                # Day 2 turns this into red herring 1: a shared semaphore pushes
-                # it 8ms -> 45ms under load, the largest relative rise anywhere.
+                # Red herring 1. A shared semaphore takes this from ~8ms to
+                # ~45ms under load: the largest relative rise in the system,
+                # and about one percent of a multi-second trace.
                 with blastradius_span(
                     tracer, OP_LOYALTY_TIER_LOOKUP, domain=DOMAIN_ORDERING_APP
                 ):
-                    await _sleep(rng, LOYALTY_MS)
+                    await herrings.loyalty_tier_lookup(rng)
 
             async with db.acquire(engine) as conn:
                 if order.has_promo:
@@ -141,13 +141,16 @@ async def run_checkout(
             status = "FAILED"
             root.set_status(Status(StatusCode.ERROR, "checkout failed"))
 
-        # Non-blocking: excluded from the §12.3 error walk. Day 2 turns this into
-        # red herring 2 -- it fails independently of the checkout outcome, which
-        # is why "deepest ERROR span anywhere" is the wrong algorithm.
+        # Red herring 2. Non-blocking, so it is excluded from the §12.3 error
+        # walk, and it fails independently of the checkout outcome -- which is
+        # why "the deepest ERROR span anywhere" is the wrong algorithm. Note it
+        # runs on the success path too, and never changes `status`.
         with blastradius_span(
             tracer, OP_ANALYTICS_PUBLISH, domain=DOMAIN_ORDERING_APP, blocking=False
-        ):
+        ) as analytics:
             await _sleep(rng, ANALYTICS_MS)
+            if herrings.analytics_fails(rng):
+                analytics.set_status(Status(StatusCode.ERROR, "analytics publish failed"))
 
         if status == "CONFIRMED":
             with blastradius_span(tracer, OP_CONFIRMATION, domain=DOMAIN_ORDERING_APP):

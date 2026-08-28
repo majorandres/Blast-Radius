@@ -146,6 +146,8 @@ async def analyse_and_persist(
         "detail": json.dumps({
             "counts": {str(k): v for k, v in a.counts.items()},
             "paths": a.paths,
+            "culprit_operations": a.culprit_operations,
+            "culprit_kinds": a.culprit_kinds,
             "unattributed": a.unattributed,
             "runner_up_domain_id": a.runner_up_id,
             "runner_up_share": round(a.runner_up_share, 4),

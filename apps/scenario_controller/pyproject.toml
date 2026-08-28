@@ -1,5 +1,5 @@
 [project]
-name = "ordering-app"
+name = "scenario-controller"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -10,15 +10,10 @@ dependencies = [
   "httpx>=0.27,<1",
   "sqlalchemy[asyncio]>=2.0.36,<3",
   "asyncpg>=0.30,<1",
-  "opentelemetry-api>=1.28,<2",
-  "opentelemetry-sdk>=1.28,<2",
-  "opentelemetry-exporter-otlp-proto-http>=1.28,<2",
-  "opentelemetry-instrumentation-fastapi>=0.49b0",
-  "opentelemetry-instrumentation-httpx>=0.49b0",
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.3,<9", "pytest-asyncio>=0.24,<1", "anyio>=4.6,<5"]
+dev = ["pytest>=8.3,<9", "pytest-asyncio>=0.24,<1"]
 
 [tool.uv.sources]
 blastradius-contracts = { path = "../../packages/contracts" }
@@ -32,4 +27,5 @@ packages = ["app"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+pythonpath = ["tests"]
 testpaths = ["tests"]
