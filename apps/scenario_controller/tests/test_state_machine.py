@@ -62,11 +62,17 @@ def test_scenario_a_ground_truth_names_the_promo_domain():
     assert SCENARIO_A.fault_type == "dependency_degradation"
 
 
-def test_only_scenario_a_is_wired():
-    """v1.2 §26: Scenario A alone is required for MVP. B and C are defined so
-    the dispatcher shape is fixed, and gated until their days."""
-    assert IMPLEMENTED == frozenset({"A"})
+def test_scenario_c_stays_gated():
+    """v1.2 §26: A is required for MVP, B is portfolio-ready, C is stretch.
+
+    C is defined so the dispatcher shape is fixed but is not selectable:
+    §16.4 notes it can flip attribution to promo-provider if pool waits exceed
+    the promo client timeout, and shipping a scenario that sometimes indicts the
+    wrong domain would undermine the one claim this project makes.
+    """
+    assert IMPLEMENTED == frozenset({"A", "B"})
     assert set(SCENARIOS) == {"A", "B", "C"}
+    assert "C" not in IMPLEMENTED
 
 
 def test_every_scenario_declares_a_domain_and_a_fault_type():
