@@ -1,21 +1,29 @@
 import asyncio
+import random
 from contextlib import asynccontextmanager
 
 from blastradius_contracts.attributes import (
     DOMAIN_PROMO_PROVIDER,
+    ERROR_KIND_KEY,
+    ERROR_KIND_UPSTREAM_ERROR,
     OP_PROMO_HANDLE,
     PARENT_SPAN_ID_HEADER,
 )
 from blastradius_contracts.exporter import BlastRadiusSpanExporter
 from blastradius_contracts.otel import blastradius_span, configure_tracing
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.trace import SpanKind
+from opentelemetry.trace import SpanKind, Status, StatusCode
 from pydantic import BaseModel
 
 from app.config import settings
 from app.faults import PromoFaults, get_faults, set_faults
+
+#: Longer than any sane client timeout, so a "timeout" fault reliably produces
+#: a client-side abort rather than a slow success.
+_TIMEOUT_STALL_S = 30.0
+_rng = random.Random(1337)
 
 provider = configure_tracing(
     settings.service_name,
@@ -59,14 +67,27 @@ async def apply_promo(
     `blastradius.domain` and so the exporter can re-parent it onto `promo.apply`
     across the filtered auto spans.
     """
+    faults = get_faults()
     with blastradius_span(
         tracer,
         OP_PROMO_HANDLE,
         domain=DOMAIN_PROMO_PROVIDER,
         kind=SpanKind.SERVER,
         parent_span_id=blastradius_parent,
-    ):
-        await asyncio.sleep(settings.base_latency_ms / 1000)
+    ) as span:
+        # A timeout is modelled as an unbounded stall, not an early return. The
+        # client aborts at PROMO_CLIENT_TIMEOUT_MS and emits no server span at
+        # all, which is the CC-A path attribution has to survive (v1.2 §6.3).
+        if _rng.random() < faults.timeout_prob:
+            await asyncio.sleep(_TIMEOUT_STALL_S)
+
+        await asyncio.sleep((settings.base_latency_ms + faults.added_latency_ms) / 1000)
+
+        if _rng.random() < faults.failure_prob:
+            span.set_attribute(ERROR_KIND_KEY, ERROR_KIND_UPSTREAM_ERROR)
+            span.set_status(Status(StatusCode.ERROR, "promo provider failure"))
+            raise HTTPException(status_code=503, detail="promo unavailable")
+
         return PromoResponse(discount_pct=10.0, promo_code="SAVE10")
 
 
