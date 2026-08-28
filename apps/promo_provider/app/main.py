@@ -6,6 +6,7 @@ from blastradius_contracts.attributes import (
     OP_PROMO_HANDLE,
     PARENT_SPAN_ID_HEADER,
 )
+from blastradius_contracts.exporter import BlastRadiusSpanExporter
 from blastradius_contracts.otel import blastradius_span, configure_tracing
 from fastapi import FastAPI, Header, Request
 from opentelemetry import trace
@@ -16,7 +17,13 @@ from pydantic import BaseModel
 from app.config import settings
 from app.faults import PromoFaults, get_faults, set_faults
 
-provider = configure_tracing(settings.service_name, settings.otlp_endpoint)
+provider = configure_tracing(
+    settings.service_name,
+    settings.otlp_endpoint,
+    # Dual export (v1.2 §7.1): genuine OTLP to Jaeger, custom JSON projection
+    # to the detector. Two pipelines, one TracerProvider, one truthful resource.
+    extra_exporters=[BlastRadiusSpanExporter(settings.observability_ingest_url, settings.service_name)],
+)
 tracer = trace.get_tracer(settings.service_name)
 
 

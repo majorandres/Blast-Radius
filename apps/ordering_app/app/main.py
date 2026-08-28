@@ -9,6 +9,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 import httpx
+from blastradius_contracts.exporter import BlastRadiusSpanExporter
 from blastradius_contracts.otel import configure_tracing
 from fastapi import FastAPI
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -19,7 +20,13 @@ from app.config import settings
 from app.dependencies import db
 from app.faults import OrderingFaults, get_faults, set_faults
 
-provider = configure_tracing(settings.service_name, settings.otlp_endpoint)
+provider = configure_tracing(
+    settings.service_name,
+    settings.otlp_endpoint,
+    # Dual export (v1.2 §7.1): genuine OTLP to Jaeger, custom JSON projection
+    # to the detector. Two pipelines, one TracerProvider, one truthful resource.
+    extra_exporters=[BlastRadiusSpanExporter(settings.observability_ingest_url, settings.service_name)],
+)
 HTTPXClientInstrumentor().instrument(tracer_provider=provider)
 
 state: dict[str, object] = {}
