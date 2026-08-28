@@ -2,16 +2,14 @@
 
 CC-A (v1.2 §6.3): this is a CLIENT span, so its attribution domain is the
 *peer* -- `promo-provider` -- never the emitter. That holds whether or not the
-peer ever responded, which is exactly what makes attribution stable when the
-call times out and no server span exists.
+peer ever responded, which is what makes attribution stable when the call times
+out and no server span exists at all.
 """
 
 from typing import Any
 
 import httpx
 from blastradius_contracts.attributes import (
-    BLOCKING_KEY,
-    DOMAIN_KEY,
     DOMAIN_PROMO_PROVIDER,
     ERROR_KIND_KEY,
     ERROR_KIND_TIMEOUT,
@@ -20,6 +18,7 @@ from blastradius_contracts.attributes import (
     OP_PROMO_APPLY,
     PARENT_SPAN_ID_HEADER,
 )
+from blastradius_contracts.otel import blastradius_span, format_span_id
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
@@ -33,14 +32,13 @@ class PromoUnavailable(Exception):
 async def apply_promo(
     client: httpx.AsyncClient, base_url: str, timeout_ms: int, order_id: str, channel: str
 ) -> dict[str, Any] | None:
-    with tracer.start_as_current_span(
-        OP_PROMO_APPLY,
-        kind=SpanKind.CLIENT,
-        attributes={DOMAIN_KEY: DOMAIN_PROMO_PROVIDER, BLOCKING_KEY: True},
+    with blastradius_span(
+        tracer, OP_PROMO_APPLY, domain=DOMAIN_PROMO_PROVIDER, kind=SpanKind.CLIENT
     ) as span:
-        # Carry the logical parent across the auto-instrumented HTTP boundary so
-        # the exporter can re-parent promo.handle onto this span (design §4.2).
-        headers = {PARENT_SPAN_ID_HEADER: format(span.get_span_context().span_id, "016x")}
+        # Carry the logical parent across the auto-instrumented HTTP boundary.
+        # Five auto spans sit between this span and promo.handle; the header is
+        # what lets the exporter collapse them back to the contract's tree.
+        headers = {PARENT_SPAN_ID_HEADER: format_span_id(span)}
         try:
             response = await client.post(
                 f"{base_url.rstrip('/')}/promo/apply",

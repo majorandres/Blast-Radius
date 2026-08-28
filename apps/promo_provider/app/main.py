@@ -2,13 +2,11 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from blastradius_contracts.attributes import (
-    BLOCKING_KEY,
-    DOMAIN_KEY,
     DOMAIN_PROMO_PROVIDER,
     OP_PROMO_HANDLE,
     PARENT_SPAN_ID_HEADER,
-    PARENT_SPAN_ID_KEY,
 )
+from blastradius_contracts.otel import blastradius_span, configure_tracing
 from fastapi import FastAPI, Header, Request
 from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -17,7 +15,6 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.faults import PromoFaults, get_faults, set_faults
-from app.telemetry.setup import configure_tracing
 
 provider = configure_tracing(settings.service_name, settings.otlp_endpoint)
 tracer = trace.get_tracer(settings.service_name)
@@ -55,12 +52,12 @@ async def apply_promo(
     `blastradius.domain` and so the exporter can re-parent it onto `promo.apply`
     across the filtered auto spans.
     """
-    attributes = {DOMAIN_KEY: DOMAIN_PROMO_PROVIDER, BLOCKING_KEY: True}
-    if blastradius_parent:
-        attributes[PARENT_SPAN_ID_KEY] = blastradius_parent
-
-    with tracer.start_as_current_span(
-        OP_PROMO_HANDLE, kind=SpanKind.SERVER, attributes=attributes
+    with blastradius_span(
+        tracer,
+        OP_PROMO_HANDLE,
+        domain=DOMAIN_PROMO_PROVIDER,
+        kind=SpanKind.SERVER,
+        parent_span_id=blastradius_parent,
     ):
         await asyncio.sleep(settings.base_latency_ms / 1000)
         return PromoResponse(discount_pct=10.0, promo_code="SAVE10")

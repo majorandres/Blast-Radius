@@ -1,47 +1,40 @@
 """ordering-app.
 
-Build step 2 (gate zero): enough to prove W3C trace context propagates across
-the promo hop. The full §6.2 span tree lands at step 4, the traffic generator
-at step 7.
+Build step 4: the full §6.2 span tree behind a debug trigger. The traffic
+generator (step 7) replaces the trigger as the production entry path.
 """
 
+import random
 import uuid
 from contextlib import asynccontextmanager
 
 import httpx
-from blastradius_contracts.attributes import (
-    BLOCKING_KEY,
-    DOMAIN_KEY,
-    DOMAIN_ORDERING_APP,
-    OP_CHECKOUT,
-    ORDER_CHANNEL_KEY,
-    ORDER_HAS_PROMO_KEY,
-    ORDER_ID_KEY,
-    ORDER_PAYMENT_METHOD_KEY,
-)
+from blastradius_contracts.otel import configure_tracing
 from fastapi import FastAPI
-from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-from opentelemetry.trace import SpanKind
 
+from app.checkout import Order, run_checkout
 from app.config import settings
-from app.dependencies.promo_client import PromoUnavailable, apply_promo
+from app.dependencies import db
 from app.faults import OrderingFaults, get_faults, set_faults
-from app.telemetry.setup import configure_tracing
 
 provider = configure_tracing(settings.service_name, settings.otlp_endpoint)
-tracer = trace.get_tracer(settings.service_name)
 HTTPXClientInstrumentor().instrument(tracer_provider=provider)
 
-state: dict[str, httpx.AsyncClient] = {}
+state: dict[str, object] = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     state["promo"] = httpx.AsyncClient()
+    state["engine"] = db.make_engine(
+        settings.database_url_app, settings.db_pool_size, settings.db_pool_timeout
+    )
+    state["rng"] = random.Random(settings.traffic_seed)
     yield
     await state["promo"].aclose()
+    await state["engine"].dispose()
     provider.shutdown()
 
 
@@ -50,33 +43,28 @@ FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
 
 
 @app.post("/_debug/checkout")
-async def debug_checkout() -> dict[str, object]:
-    """Gate-zero trigger: one checkout root span that crosses the promo hop."""
-    order_id = str(uuid.uuid4())
-    with tracer.start_as_current_span(
-        OP_CHECKOUT,
-        kind=SpanKind.SERVER,
-        attributes={
-            DOMAIN_KEY: DOMAIN_ORDERING_APP,
-            BLOCKING_KEY: True,
-            ORDER_ID_KEY: order_id,
-            ORDER_CHANNEL_KEY: "mobile",
-            ORDER_HAS_PROMO_KEY: True,
-            ORDER_PAYMENT_METHOD_KEY: "card",
-        },
-    ) as span:
-        trace_id = format(span.get_span_context().trace_id, "032x")
-        try:
-            promo = await apply_promo(
-                state["promo"],
-                settings.promo_provider_url,
-                settings.promo_client_timeout_ms,
-                order_id,
-                "mobile",
-            )
-        except PromoUnavailable:
-            promo = None
-        return {"order_id": order_id, "trace_id": trace_id, "promo": promo}
+async def debug_checkout(
+    channel: str = "mobile", has_promo: bool = True, payment_method: str = "card"
+) -> dict[str, str]:
+    order = Order(
+        id=uuid.uuid4(),
+        channel=channel,
+        has_promo=has_promo,
+        payment_method=payment_method,
+    )
+    result = await run_checkout(
+        order,
+        rng=state["rng"],
+        engine=state["engine"],
+        promo_client=state["promo"],
+        promo_base_url=settings.promo_provider_url,
+        promo_timeout_ms=settings.promo_client_timeout_ms,
+    )
+    return {
+        "order_id": str(result.order_id),
+        "trace_id": result.trace_id,
+        "status": result.status,
+    }
 
 
 @app.put("/_faults", response_model=OrderingFaults)

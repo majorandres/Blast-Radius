@@ -47,11 +47,21 @@ name = "blastradius-contracts"
 version = "0.1.0"
 source = { directory = "../../packages/contracts" }
 dependencies = [
+    { name = "httpx" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.9,<3" }]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27,<1" },
+    { name = "opentelemetry-api", specifier = ">=1.28,<2" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.28,<2" },
+    { name = "opentelemetry-sdk", specifier = ">=1.28,<2" },
+    { name = "pydantic", specifier = ">=2.9,<3" },
+]
 
 [[package]]
 name = "certifi"
