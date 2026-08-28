@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from blastradius_contracts.profiles import DetectionProfile
 
 from app.db import engine
+from app.detection.analysis import analyse_and_persist
 from app.detection.incidents import IncidentTracker
 from app.detection.slo import evaluate
 
@@ -81,11 +82,16 @@ class DetectionEngine:
                 min_samples=p.slo_min_samples,
                 now=datetime.now(UTC),
             )
-            await self._tracker.observe(
+            incident = await self._tracker.observe(
                 conn, evaluation,
                 baseline_window_s=p.baseline_window_s,
                 baseline_guard_s=p.baseline_guard_s,
             )
+            # Re-analysed every pass while the incident runs. The window grows,
+            # so the diagnosis sharpens; the baseline it is measured against
+            # was frozen at open and never moves.
+            if incident is not None and incident.state in ("OPEN", "RECOVERING"):
+                await analyse_and_persist(conn, incident, p)
             await conn.commit()
 
         self._last_evaluation = evaluation
