@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the stack
+        run: |
+          cp .env.example .env
+          docker compose build
+
+      - name: Start the stack
+        run: |
+          docker compose up -d
+          # Compose healthchecks gate the app containers on migrate completing,
+          # so reaching "healthy" already proves the schema, roles, grants and
+          # seed applied on an empty volume.
+          timeout 180 bash -c 'until [ "$(docker compose ps --format "{{.Health}}" \
+            | grep -c healthy)" -ge 5 ]; do sleep 3; done'
+          docker compose ps
+
+      - name: Let a baseline accumulate
+        run: sleep 45
+
+      # Fast suites first: a failure here should not wait on the slow ones.
+      - name: Unit and integration tests
+        run: |
+          docker compose run --rm --no-deps ordering-app pytest -q
+          docker compose run --rm --no-deps scenario-controller pytest -q
+          docker compose run --rm \
+            -e DATABASE_URL_SCENARIO="postgresql+asyncpg://blastradius_scenario:scenario@postgres:5432/blastradius" \
+            -e DATABASE_URL_APP="postgresql+asyncpg://blastradius_app:app@postgres:5432/blastradius" \
+            observability-service pytest -q -m "not slow"
+
+      # Live scenario runs. StubProvider keeps CI off the real model on PRs.
+      - name: Scenario acceptance
+        env:
+          NARRATIVE_PROVIDER: stub
+        run: |
+          docker compose run --rm \
+            -e NARRATIVE_PROVIDER=stub \
+            -e DATABASE_URL_SCENARIO="postgresql+asyncpg://blastradius_scenario:scenario@postgres:5432/blastradius" \
+            -e DATABASE_URL_APP="postgresql+asyncpg://blastradius_app:app@postgres:5432/blastradius" \
+            observability-service pytest -q -m slow
+
+      - name: Browser smoke
+        run: |
+          docker run --rm --network blastradius_default \
+            -v "$PWD/apps/frontend/tests:/out" -w /out \
+            mcr.microsoft.com/playwright:v1.49.1-noble \
+            sh -c "npm install --silent playwright@1.49.1 && node smoke.mjs"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: docker compose logs --tail 120
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
