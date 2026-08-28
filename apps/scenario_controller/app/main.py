@@ -14,13 +14,14 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 import httpx
-from blastradius_contracts.profiles import scenario_profile
+from blastradius_contracts.profiles import detection_profile, scenario_profile
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import settings
 from app.dispatcher import Dispatcher
+from app.reveal import IncidentOutsideRunWindow, reveal, session_score
 from app.scenarios import IMPLEMENTED, SCENARIOS
 from app.state_machine import (
     ScenarioAlreadyActive,
@@ -42,6 +43,10 @@ async def lifespan(app: FastAPI):
     state["engine"] = create_async_engine(settings.database_url_scenario, future=True)
     state["client"] = httpx.AsyncClient()
     state["profile"] = profile
+    # The detector's SLO window bounds how long a correct detection may lag the
+    # fault (§5.4). Reading a detector *constant* is the safe direction: nothing
+    # about this run flows the other way.
+    state["slo_window_s"] = detection_profile().slo_window_s
     state["dispatcher"] = Dispatcher(
         state["engine"], state["client"],
         promo_url=settings.promo_provider_url,
@@ -163,6 +168,52 @@ async def stop(run_id: str) -> ScenarioRun:
 
         updated = await latest_run(conn)
     return _to_run(updated, reveal_scenario=updated["mode"] != "blind")
+
+
+class RevealRequest(BaseModel):
+    incident_id: str | None = None
+
+
+@app.post("/api/scenarios/{run_id}/reveal")
+async def reveal_run(run_id: str, request: RevealRequest) -> dict:
+    import uuid as _uuid
+
+    async with state["engine"].connect() as conn:
+        try:
+            result = await reveal(
+                conn, state["client"],
+                run_id=_uuid.UUID(run_id),
+                incident_id=request.incident_id,
+                observability_url=settings.observability_url,
+                recovery_hold_s=state["profile"].recovery_hold_s,
+                slo_window_s=state["slo_window_s"],
+            )
+        except IncidentOutsideRunWindow as exc:
+            # Nothing is written and the run is not scored. The user may retry
+            # with a different incident.
+            raise HTTPException(409, {
+                "code": "INCIDENT_OUTSIDE_RUN_WINDOW", "message": exc.message,
+            }) from exc
+        except ValueError as exc:
+            raise HTTPException(404, {"code": "NOT_FOUND", "message": str(exc)}) from exc
+
+    return {
+        "scenario_run_id": result.scenario_run_id,
+        "detected_domain": result.detected_domain,
+        "detected_verdict": result.detected_verdict,
+        "injected_domain": result.injected_domain,
+        "injected_fault_type": result.injected_fault_type,
+        "correct": result.correct,
+        "session_correct": result.session_correct,
+        "session_total": result.session_total,
+    }
+
+
+@app.get("/api/session/score")
+async def get_score() -> dict:
+    async with state["engine"].connect() as conn:
+        correct, total = await session_score(conn)
+    return {"correct": correct, "total": total}
 
 
 @app.get("/healthz")

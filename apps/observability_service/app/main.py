@@ -19,6 +19,7 @@ from blastradius_contracts.profiles import detection_profile
 from app.config import settings
 from app.db import dispose_engine, init_engine, load_reference_ids
 from app.detection.engine import DetectionEngine
+from app.api.read import router as read_router
 from app.ingest.api import router as ingest_router
 from app.ingest.fence import fence
 
@@ -35,7 +36,8 @@ async def lifespan(app: FastAPI):
              sorted(app.state.service_ids), sorted(app.state.domain_ids),
              fence.last_reset_ts.isoformat())
 
-    app.state.detection = DetectionEngine(detection_profile())
+    app.state.profile = detection_profile()
+    app.state.detection = DetectionEngine(app.state.profile)
     await app.state.detection.start()
 
     yield
@@ -46,6 +48,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="observability-service", lifespan=lifespan)
 app.include_router(ingest_router)
+app.include_router(read_router)
 
 
 @app.exception_handler(RequestValidationError)

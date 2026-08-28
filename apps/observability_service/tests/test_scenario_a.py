@@ -30,7 +30,51 @@ DETECTOR_URL = os.environ.get(
 )
 
 #: DEMO: ramp 15s, then the 60s SLO window has to fill enough to breach twice.
-DIAGNOSIS_TIMEOUT_S = 150
+DIAGNOSIS_TIMEOUT_S = 200
+
+#: Read the incident once it is well established, not at the first sign of one.
+#: §14.4's expectations describe the scenario at full fault strength; sampling
+#: 20 candidates in means sampling mid-ramp, where the promo cohort is
+#: genuinely only DEGRADED and the test would be asserting a timing accident.
+MIN_CANDIDATES = 60
+
+#: The baseline window looks back BASELINE_WINDOW_S..BASELINE_GUARD_S before the
+#: first breach and is frozen at open. If a previous run's fault is still inside
+#: it, the incident is measured against a degraded baseline and the verdicts are
+#: wrong in a specific direction: with `base_rate = 0.41`, AFFECTED would demand
+#: an incident failure rate of 1.22, which no cohort can reach. So the fixture
+#: waits for a genuinely healthy stretch before injecting.
+BASELINE_WINDOW_S = 240
+HEALTHY_BASELINE_MAX_FAILURE_RATE = 0.02
+BASELINE_SETTLE_TIMEOUT_S = 300
+
+_BASELINE_HEALTH = sa.text(
+    """
+    SELECT count(*) AS n,
+           count(*) FILTER (WHERE checkout_status = 'FAILED')::numeric
+             / NULLIF(count(*), 0) AS failure_rate
+    FROM trace
+    WHERE root_span_id IS NOT NULL
+      AND root_end_ts >= now() - make_interval(secs => :window_s)
+    """
+)
+
+
+async def _wait_for_healthy_baseline(engine) -> float:
+    """Block until the last BASELINE_WINDOW_S of traffic is genuinely healthy."""
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + BASELINE_SETTLE_TIMEOUT_S
+    rate = 1.0
+    while loop.time() < deadline:
+        async with engine.connect() as conn:
+            row = (await conn.execute(
+                _BASELINE_HEALTH, {"window_s": BASELINE_WINDOW_S}
+            )).mappings().one()
+        rate = float(row["failure_rate"] or 0.0)
+        if int(row["n"] or 0) > 50 and rate <= HEALTHY_BASELINE_MAX_FAILURE_RATE:
+            return rate
+        await asyncio.sleep(5)
+    return rate
 QUIESCE_TIMEOUT_S = 90
 
 _INCIDENT = sa.text(
@@ -75,6 +119,13 @@ async def diagnosis():
                 QUIESCE_TIMEOUT_S,
             )
 
+            baseline_rate = await _wait_for_healthy_baseline(engine)
+            assert baseline_rate <= HEALTHY_BASELINE_MAX_FAILURE_RATE, (
+                f"baseline window still shows {baseline_rate:.2%} failures after "
+                f"{BASELINE_SETTLE_TIMEOUT_S}s; the incident would be measured "
+                "against a degraded baseline"
+            )
+
             response = await client.post(
                 f"{CONTROLLER_URL}/api/scenarios/inject",
                 json={"mode": "blind", "scenario": "A", "seed": 4242},
@@ -94,7 +145,7 @@ async def diagnosis():
                     and r["first_breach_ts"] is not None
                     and r["first_breach_ts"] >= started
                     and r["verdict"] is not None
-                    and (r["candidate_trace_count"] or 0) > 20
+                    and (r["candidate_trace_count"] or 0) >= MIN_CANDIDATES
                 )
 
             row = await _wait_for(engine, diagnosed, DIAGNOSIS_TIMEOUT_S)
@@ -174,9 +225,15 @@ async def test_promo_traffic_is_affected_and_non_promo_traffic_is_not(diagnosis)
     promo = _cohort(row["impact"], "has_promo", "true")
     clean = _cohort(row["impact"], "has_promo", "false")
 
-    assert promo["availability_verdict"] == "AFFECTED"
-    assert promo["overall_verdict"] == "AFFECTED"
-    assert clean["overall_verdict"] == "UNAFFECTED"
+    detail = (
+        f"promo n={promo['incident_n']} fail={promo['incident_failure_rate']} "
+        f"p95={promo['incident_p95_ms']} (baseline fail={promo['baseline_failure_rate']}, "
+        f"p95={promo['baseline_p95_ms']}); clean n={clean['incident_n']} "
+        f"fail={clean['incident_failure_rate']} p95={clean['incident_p95_ms']}"
+    )
+    assert promo["availability_verdict"] == "AFFECTED", detail
+    assert promo["overall_verdict"] == "AFFECTED", detail
+    assert clean["overall_verdict"] == "UNAFFECTED", detail
 
 
 @pytest.mark.asyncio(loop_scope="module")

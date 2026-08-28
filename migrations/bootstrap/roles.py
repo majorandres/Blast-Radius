@@ -25,14 +25,14 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON incident, incident_symptom TO blastradiu
 GRANT SELECT ON slo TO blastradius_detector;
 GRANT SELECT, UPDATE ON ingest_state TO blastradius_detector;
 GRANT SELECT ON service, domain, domain_edge TO blastradius_detector;
-REVOKE ALL ON ground_truth, scenario_run, "order" FROM blastradius_detector;
+REVOKE ALL ON ground_truth, scenario_run, reveal, "order" FROM blastradius_detector;
 
 GRANT SELECT, INSERT, DELETE ON "order" TO blastradius_app;
 GRANT SELECT ON service, domain TO blastradius_app;
-REVOKE ALL ON span, trace, ground_truth, scenario_run FROM blastradius_app;
+REVOKE ALL ON span, trace, ground_truth, scenario_run, reveal FROM blastradius_app;
 REVOKE ALL ON incident, incident_symptom, slo FROM blastradius_app;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON scenario_run, ground_truth TO blastradius_scenario;
+GRANT SELECT, INSERT, UPDATE, DELETE ON scenario_run, ground_truth, reveal TO blastradius_scenario;
 GRANT SELECT ON service, domain TO blastradius_scenario;
 REVOKE ALL ON span, trace, "order" FROM blastradius_scenario;
 REVOKE ALL ON incident, incident_symptom FROM blastradius_scenario;
