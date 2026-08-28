@@ -51,6 +51,19 @@ class DetectionEngine:
                      self._tracker.current.id, self._tracker.current.state)
         self._task = asyncio.create_task(self._run())
 
+    def reset_state(self) -> None:
+        """Drop the in-memory incident and its counters.
+
+        The tracker holds consecutive-breach counts between passes. After a
+        reset those describe a system that no longer exists, and leaving them
+        set would let a single post-reset breach open an incident immediately.
+        """
+        self._tracker = IncidentTracker(
+            breach_persistence=self._profile.breach_persistence,
+            recovery_persistence=self._profile.recovery_persistence,
+        )
+        self._last_evaluation = None
+
     async def stop(self) -> None:
         if self._task is not None:
             self._task.cancel()

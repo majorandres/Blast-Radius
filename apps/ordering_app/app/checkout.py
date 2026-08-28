@@ -90,6 +90,8 @@ async def run_checkout(
         OP_CHECKOUT,
         domain=DOMAIN_ORDERING_APP,
         kind=SpanKind.SERVER,
+        # Always the start of its own trace, whatever context it was called in.
+        root=True,
         attributes={
             ORDER_ID_KEY: str(order.id),
             ORDER_CHANNEL_KEY: order.channel,

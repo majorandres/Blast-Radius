@@ -20,6 +20,7 @@ from app.config import settings
 from app.db import dispose_engine, init_engine, load_reference_ids
 from app.detection.engine import DetectionEngine
 from app.api.read import router as read_router
+from app.api.reset import router as reset_router
 from app.ingest.api import router as ingest_router
 from app.ingest.fence import fence
 
@@ -49,6 +50,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="observability-service", lifespan=lifespan)
 app.include_router(ingest_router)
 app.include_router(read_router)
+app.include_router(reset_router)
 
 
 @app.exception_handler(RequestValidationError)

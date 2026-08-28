@@ -18,6 +18,7 @@ from opentelemetry.trace import SpanKind, Status, StatusCode
 from pydantic import BaseModel
 
 from app.config import settings
+from app.drain import drain, in_flight
 from app.faults import PromoFaults, get_faults, set_faults
 
 #: Longer than any sane client timeout, so a "timeout" fault reliably produces
@@ -68,7 +69,7 @@ async def apply_promo(
     across the filtered auto spans.
     """
     faults = get_faults()
-    with blastradius_span(
+    with in_flight, blastradius_span(
         tracer,
         OP_PROMO_HANDLE,
         domain=DOMAIN_PROMO_PROVIDER,
@@ -89,6 +90,13 @@ async def apply_promo(
             raise HTTPException(status_code=503, detail="promo unavailable")
 
         return PromoResponse(discount_pct=10.0, promo_code="SAVE10")
+
+
+@app.post("/internal/drain")
+async def internal_drain() -> dict:
+    """Await in-flight promo calls and flush. Idempotent and always safe."""
+    result = await drain(provider, drain_timeout_s=10, flush_timeout_s=5)
+    return result.model_dump(mode="json")
 
 
 @app.put("/_faults", response_model=PromoFaults)

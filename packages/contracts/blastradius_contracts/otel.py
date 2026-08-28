@@ -23,6 +23,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
+from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -65,21 +66,36 @@ def blastradius_span(
     blocking: bool = True,
     attributes: dict[str, Any] | None = None,
     parent_span_id: str | None = None,
+    root: bool = False,
 ) -> Iterator[Span]:
     """Open one contract span.
 
     `parent_span_id` overrides the contextvar and is used exactly once: on
     `promo.handle`, whose logical parent lives in another process.
+
+    `root=True` detaches from ambient context entirely. A checkout is always the
+    start of its own trace, and it must not inherit whatever span happened to be
+    active when its task was created. That is not hypothetical: starting the
+    traffic generator from inside a request handler -- which is what
+    `/internal/resume` does after a reset -- makes `asyncio.create_task` capture
+    that request's span, and every checkout then lands on one enormous trace.
     """
     attrs: dict[str, Any] = {DOMAIN_KEY: domain, BLOCKING_KEY: blocking}
     if attributes:
         attrs.update(attributes)
 
-    parent = parent_span_id if parent_span_id is not None else _current_parent.get()
+    parent = None if root else (
+        parent_span_id if parent_span_id is not None else _current_parent.get()
+    )
     if parent:
         attrs[PARENT_SPAN_ID_KEY] = parent
 
-    with tracer.start_as_current_span(operation, kind=kind, attributes=attrs) as span:
+    # An empty Context has no active span, so the SDK starts a new trace.
+    start_context = otel_context.Context() if root else None
+
+    with tracer.start_as_current_span(
+        operation, kind=kind, attributes=attrs, context=start_context
+    ) as span:
         token = _current_parent.set(format_span_id(span))
         try:
             yield span

@@ -15,7 +15,10 @@ from fastapi import FastAPI
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
+import sqlalchemy as sa
+
 from app.checkout import Order, run_checkout
+from app.drain import drain
 from app.config import settings
 from app.dependencies import db
 from app.faults import OrderingFaults, get_faults, set_faults
@@ -42,15 +45,7 @@ async def lifespan(app: FastAPI):
     state["rng"] = random.Random(settings.traffic_seed)
 
     if settings.traffic_enabled:
-        generator = TrafficGenerator(
-            engine=state["engine"],
-            promo_client=state["promo"],
-            promo_base_url=settings.promo_provider_url,
-            promo_timeout_ms=settings.promo_client_timeout_ms,
-            rate_per_min=settings.traffic_base_rate_per_min,
-            max_concurrency=settings.traffic_max_concurrency,
-            seed=settings.traffic_seed,
-        )
+        generator = _make_generator()
         generator.start()
         state["generator"] = generator
 
@@ -90,6 +85,56 @@ async def debug_checkout(
         "trace_id": result.trace_id,
         "status": result.status,
     }
+
+
+def _make_generator() -> TrafficGenerator:
+    return TrafficGenerator(
+        engine=state["engine"],
+        promo_client=state["promo"],
+        promo_base_url=settings.promo_provider_url,
+        promo_timeout_ms=settings.promo_client_timeout_ms,
+        rate_per_min=settings.traffic_base_rate_per_min,
+        max_concurrency=settings.traffic_max_concurrency,
+        seed=settings.traffic_seed,
+    )
+
+
+@app.post("/internal/drain")
+async def internal_drain() -> dict:
+    """Stop generating, await in-flight checkouts, flush (§22)."""
+    result = await drain(
+        state.get("generator"), provider, drain_timeout_s=10, flush_timeout_s=5
+    )
+    state.pop("generator", None)
+    return result.model_dump(mode="json")
+
+
+@app.post("/internal/reset")
+async def internal_reset() -> dict:
+    """Delete this service's own state and reseed. Traffic stays stopped.
+
+    Only `"order"` is touched: the app role cannot read or delete telemetry,
+    incidents, or scenario state, and does not try.
+    """
+    from app.traffic.load import gauge
+
+    async with state["engine"].connect() as conn:
+        result = await conn.execute(sa.text('DELETE FROM "order"'))
+        await conn.commit()
+
+    state["rng"] = random.Random(settings.traffic_seed)
+    gauge.reset()
+    return {"deleted": {"order": result.rowcount}, "reseeded": True}
+
+
+@app.post("/internal/resume")
+async def internal_resume() -> dict:
+    """Restart baseline traffic after a reset."""
+    if "generator" not in state and settings.traffic_enabled:
+        generator = _make_generator()
+        generator.start()
+        state["generator"] = generator
+    return {"running": "generator" in state}
 
 
 @app.put("/_faults", response_model=OrderingFaults)

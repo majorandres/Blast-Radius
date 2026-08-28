@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import settings
 from app.dispatcher import Dispatcher
+from app.reset import ResetFailed, reset_all
 from app.reveal import IncidentOutsideRunWindow, reveal, session_score
 from app.scenarios import IMPLEMENTED, SCENARIOS
 from app.state_machine import (
@@ -217,6 +218,31 @@ async def get_score() -> dict:
     async with state["engine"].connect() as conn:
         correct, total = await session_score(conn)
     return {"correct": correct, "total": total}
+
+
+@app.post("/api/reset")
+async def reset_system() -> dict:
+    """Developer affordance, not part of the demo UI (§22).
+
+    Stops the dispatcher first: a running scenario would re-apply its fault
+    partway through the sequence and leave the system degraded with an empty
+    telemetry store to explain it.
+    """
+    await state["dispatcher"].stop()
+    try:
+        report = await reset_all(
+            state["engine"], state["client"],
+            ordering_url=settings.ordering_app_url,
+            promo_url=settings.promo_provider_url,
+            observability_url=settings.observability_url,
+        )
+    except ResetFailed as exc:
+        # Left stopped rather than half-reset. A half-reset system looks
+        # healthy and is not.
+        raise HTTPException(500, {
+            "code": "RESET_IN_PROGRESS", "message": str(exc), "step": exc.step,
+        }) from exc
+    return report
 
 
 @app.get("/healthz")
