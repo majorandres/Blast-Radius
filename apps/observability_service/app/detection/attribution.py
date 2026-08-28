@@ -37,6 +37,16 @@ DOMINANCE = 0.30
 MIN_ATTRIBUTION_SHARE = 0.40
 MIN_RUNNER_UP_GAP = 0.15
 
+#: Fewest abnormal traces that can carry a verdict. Not in v1.2; recorded as a
+#: deviation. Without it the first pass after an incident opens reports "100% of
+#: 3" -- a number that reads as certainty and is an artifact of the sample size.
+#:
+#: Deliberately lower than the profile's `min_abnormal_traces`, which gates
+#: *concentration*. Attribution ranks one dimension (which domain) and needs
+#: less evidence than partitioning traffic into cohorts to ask which of them
+#: explains the abnormality.
+MIN_CANDIDATES_FOR_VERDICT = 5
+
 
 @dataclass(frozen=True)
 class SpanNode:
@@ -186,7 +196,16 @@ class AttributionResult:
     culprit_kinds: dict[str, int]
 
 
-def aggregate(trees: list[TraceTree]) -> AttributionResult:
+def aggregate(trees: list[TraceTree], min_candidates: int = 0) -> AttributionResult:
+    """Rank domains across the abnormal population.
+
+    `min_candidates` guards against a verdict that is arithmetically confident
+    and evidentially thin. Seconds after an incident opens the window holds a
+    handful of traces, and three of them agreeing yields "100% of 3" -- a
+    number that reads as certainty and is really an artifact of the sample
+    size. Below the floor the answer is NO_DIAGNOSIS, which is what the system
+    actually knows at that point.
+    """
     counts: Counter[int] = Counter()
     paths: Counter[str] = Counter()
     operations: Counter[str] = Counter()
@@ -209,7 +228,9 @@ def aggregate(trees: list[TraceTree]) -> AttributionResult:
     share = ranked[0][1] / total if ranked and total else 0.0
     runner_up_share = ranked[1][1] / total if len(ranked) > 1 and total else 0.0
 
-    if not ranked or share < MIN_ATTRIBUTION_SHARE:
+    if total < min_candidates:
+        verdict = "NO_DIAGNOSIS"
+    elif not ranked or share < MIN_ATTRIBUTION_SHARE:
         verdict = "NO_DIAGNOSIS"
     elif share - runner_up_share < MIN_RUNNER_UP_GAP:
         verdict = "AMBIGUOUS"
@@ -257,6 +278,8 @@ _SPANS = sa.text(
 async def load_candidates(
     conn: AsyncConnection, *, opened_ts: datetime, settle_s: int, threshold_ms: float
 ) -> list[TraceTree]:
+    # `opened_ts` here is the incident's start -- its first breach -- not the
+    # moment it was confirmed open. See analysis.py.
     """The abnormal population: ERROR **or** slower than the frozen threshold.
 
     This exact set is shared with concentration (v1.2 §13.2). One definition of

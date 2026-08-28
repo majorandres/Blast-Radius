@@ -140,6 +140,11 @@ export default function IncidentCard({ incident }) {
     );
   }
 
+  // NO_DIAGNOSIS has two causes and they say different things to an operator:
+  // no domain explains the incident, or there is not yet enough of it to judge.
+  const floor = evidence?.attribution_detail?.min_candidates ?? 0;
+  const thin =
+    incident.verdict === "NO_DIAGNOSIS" && (incident.candidate_trace_count ?? 0) < floor;
   const impact = evidence?.impact ?? [];
   const concentration = evidence?.concentration ?? [];
   const byKey = Object.fromEntries(concentration.map((c) => [`${c.dimension}:${c.value}`, c]));
@@ -159,12 +164,14 @@ export default function IncidentCard({ incident }) {
           </>
         ) : (
           <>
-            <span className="domain">{incident.verdict ?? "ANALYSING"}</span>
+            <span className="domain">{thin ? "GATHERING" : incident.verdict ?? "ANALYSING"}</span>
             <span className="meta">
               {incident.verdict === "AMBIGUOUS"
                 ? "two candidates too close to separate"
                 : incident.verdict === "NO_DIAGNOSIS"
-                  ? "no domain explains enough of the incident"
+                  ? thin
+                    ? `only ${incident.candidate_trace_count ?? 0} abnormal traces so far`
+                    : "no domain explains enough of the incident"
                   : "working"}
             </span>
           </>

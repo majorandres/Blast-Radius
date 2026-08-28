@@ -68,6 +68,16 @@ await page.screenshot({ path: `${OUT}/loop-3-revealed.png`, fullPage: true });
 
 console.log(JSON.stringify({ diagnosisSeconds, blastRadiusSeconds, verdict, detail, summary }, null, 2));
 
+// Revealing scores the run; it does not end it. Without this the dispatcher
+// keeps holding the fault for the rest of its window and every later check
+// runs against a degraded system.
+const stopAfter = page.getByRole("button", { name: /^Stop$/ });
+if (await stopAfter.count()) {
+  log("stopping the run so the system returns to healthy");
+  await stopAfter.click();
+  await page.waitForTimeout(2000);
+}
+
 await browser.close();
 if (!verdict.includes("CORRECT") || verdict.includes("INCORRECT")) {
   console.error("[smoke] FAILED: expected CORRECT");

@@ -16,6 +16,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
 ORDERING_URL = os.environ.get("ORDERING_APP_URL", "http://ordering-app:8001")
+PROMO_URL = os.environ.get("PROMO_PROVIDER_URL_BASE", "http://promo-provider:8002")
 DETECTOR_URL = os.environ.get(
     "DATABASE_URL_DETECTOR",
     "postgresql+asyncpg://blastradius_detector:detector@postgres:5432/blastradius",
@@ -50,14 +51,28 @@ async def _await_spans(engine, trace_id: str, expected: int) -> list:
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def checkout_trace():
-    """One promo-bearing checkout, followed all the way into Postgres."""
+    """One promo-bearing checkout, followed all the way into Postgres.
+
+    The full §6.2 tree only exists when the promo call succeeds: under a timeout
+    the client aborts and no `promo.handle` span is ever emitted, which is
+    correct behaviour and the wrong fixture for asserting tree shape. So this
+    clears any fault first and retries until it gets a clean checkout.
+    """
     async with AsyncClient(timeout=30) as client:
-        response = await client.post(
-            f"{ORDERING_URL}/_debug/checkout",
-            params={"has_promo": "true", "channel": "web", "payment_method": "wallet"},
-        )
-    response.raise_for_status()
-    trace_id = response.json()["trace_id"]
+        await client.put(f"{PROMO_URL}/_faults", json={})
+        trace_id = None
+        for _ in range(6):
+            response = await client.post(
+                f"{ORDERING_URL}/_debug/checkout",
+                params={"has_promo": "true", "channel": "web", "payment_method": "wallet"},
+            )
+            response.raise_for_status()
+            body = response.json()
+            if body["status"] == "CONFIRMED":
+                trace_id = body["trace_id"]
+                break
+            await asyncio.sleep(2)
+        assert trace_id, "could not obtain a healthy promo-bearing checkout"
 
     engine = create_async_engine(DETECTOR_URL)
     try:

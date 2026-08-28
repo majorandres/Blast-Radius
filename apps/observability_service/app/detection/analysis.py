@@ -23,7 +23,12 @@ from app.blast_radius.concentration import (
     primary_dimension,
 )
 from app.blast_radius.impact import DIMENSIONS, CohortImpact, build_impact, cohort_stats
-from app.detection.attribution import AttributionResult, aggregate, load_candidates
+from app.detection.attribution import (
+    MIN_CANDIDATES_FOR_VERDICT,
+    AttributionResult,
+    aggregate,
+    load_candidates,
+)
 from app.detection.incidents import Incident
 
 log = logging.getLogger(__name__)
@@ -70,13 +75,20 @@ async def analyse(
 
     baseline = row["baseline_snapshot"] or {}
     threshold_ms = float(baseline.get("abnormal_latency_threshold_ms") or 500.0)
-    opened_ts: datetime = row["opened_ts"]
     now = datetime.now(UTC)
 
+    # The incident window opens at the *first breach*, not at the moment the
+    # incident was confirmed. v1.2 §12.1 says `opened_ts`, which discards the
+    # traces that broke the SLO in the first place -- the incident's own
+    # founding evidence -- and leaves the first analysis pass with literally
+    # zero candidates. Recorded as a deviation.
+    incident_start: datetime = row["first_breach_ts"]
+
     trees = await load_candidates(
-        conn, opened_ts=opened_ts, settle_s=profile.trace_settle_s, threshold_ms=threshold_ms
+        conn, opened_ts=incident_start, settle_s=profile.trace_settle_s,
+        threshold_ms=threshold_ms,
     )
-    attribution = aggregate(trees)
+    attribution = aggregate(trees, min_candidates=MIN_CANDIDATES_FOR_VERDICT)
 
     baseline_start = datetime.fromisoformat(baseline["window_start"])
     baseline_end = datetime.fromisoformat(baseline["window_end"])
@@ -92,7 +104,8 @@ async def analyse(
             threshold_ms=threshold_ms,
         )
         live = await cohort_stats(
-            conn, dimension, window_start=opened_ts, window_end=now, threshold_ms=threshold_ms
+            conn, dimension, window_start=incident_start, window_end=now,
+            threshold_ms=threshold_ms,
         )
         # Every dimension partitions the same traces, so the totals are read
         # once rather than summed per dimension.
@@ -149,6 +162,7 @@ async def analyse_and_persist(
             "culprit_operations": a.culprit_operations,
             "culprit_kinds": a.culprit_kinds,
             "unattributed": a.unattributed,
+            "min_candidates": MIN_CANDIDATES_FOR_VERDICT,
             "runner_up_domain_id": a.runner_up_id,
             "runner_up_share": round(a.runner_up_share, 4),
             "abnormal_latency_threshold_ms": analysis.threshold_ms,
