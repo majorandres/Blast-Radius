@@ -23,6 +23,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.checkout import Order, run_checkout
+from app.faults import get_faults
 from app.traffic.load import gauge
 
 log = logging.getLogger(__name__)
@@ -111,6 +112,7 @@ class TrafficGenerator:
                     promo_client=self._promo_client,
                     promo_base_url=self._promo_base_url,
                     promo_timeout_ms=self._promo_timeout_ms,
+                    payment_faults=get_faults().payment,
                 )
             except Exception:
                 # A checkout that blows up must not kill the generator. The

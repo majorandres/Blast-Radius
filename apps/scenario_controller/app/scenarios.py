@@ -58,9 +58,10 @@ SCENARIO_C = Scenario(
 
 SCENARIOS: dict[str, Scenario] = {s.name: s for s in (SCENARIO_A, SCENARIO_B, SCENARIO_C)}
 
-#: Only Scenario A is wired end to end. B and C are defined so the dispatcher
-#: shape is fixed, and are gated until their days.
-IMPLEMENTED: frozenset[str] = frozenset({"A"})
+#: A and B run end to end. C is defined so the dispatcher shape is fixed and
+#: remains gated: v1.2 §26 lists it as stretch, and §16.4 notes it can flip
+#: attribution to promo-provider if pool waits exceed the promo client timeout.
+IMPLEMENTED: frozenset[str] = frozenset({"A", "B"})
 
 
 def scale(payload: dict, factor: float) -> dict:

@@ -182,6 +182,30 @@ export default function IncidentCard({ incident }) {
         <Summary incident={incident} impact={impact} concentration={concentration} />
       )}
 
+      {incident.narrative?.what_happened && (
+        <div className="narrative">
+          <p>{incident.narrative.what_happened}</p>
+          <p>{incident.narrative.who_was_affected}</p>
+          <p>{incident.narrative.what_to_check}</p>
+          {/* Labelled, always. A reader must never have to guess whether they
+              are looking at generated prose or a deterministic template. */}
+          <div className="narrative-source">
+            {incident.narrative_source === "fallback"
+              ? "written from the evidence, no model involved"
+              : `generated · ${incident.narrative_source}`}
+          </div>
+        </div>
+      )}
+
+      {incident.narrative?.runbook?.length > 0 && (
+        <div className="runbook">
+          <div className="runbook-title">Where to look</div>
+          <ul>
+            {incident.narrative.runbook.map((step) => <li key={step}>{step}</li>)}
+          </ul>
+        </div>
+      )}
+
       {impact.length === 0 ? (
         <p className="empty">Gathering evidence…</p>
       ) : (

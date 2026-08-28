@@ -38,7 +38,10 @@ async def lifespan(app: FastAPI):
              fence.last_reset_ts.isoformat())
 
     app.state.profile = detection_profile()
-    app.state.detection = DetectionEngine(app.state.profile)
+    from app.narrative.provider import select_provider
+
+    app.state.narrative_provider = select_provider()
+    app.state.detection = DetectionEngine(app.state.profile, app.state.narrative_provider)
     await app.state.detection.start()
 
     yield

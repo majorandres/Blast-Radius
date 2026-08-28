@@ -48,7 +48,9 @@ _PERSIST = sa.text(
       impact                = CAST(:impact AS jsonb),
       concentration         = CAST(:concentration AS jsonb),
       primary_dimension     = :primary_dimension,
-      primary_cohort        = :primary_cohort
+      primary_cohort        = :primary_cohort,
+      narrative             = CAST(:narrative AS jsonb),
+      narrative_source      = :narrative_source
     WHERE id = :id
     """
 )
@@ -142,14 +144,48 @@ async def analyse(
     )
 
 
+#: Domain kinds are static reference data; the runbook is keyed on them.
+DOMAIN_KINDS = {
+    "ordering-app": "process",
+    "promo-provider": "process",
+    "payment-gateway": "logical_dependency",
+    "order-datastore": "datastore",
+}
+DOMAIN_NAMES = {1: "ordering-app", 2: "promo-provider", 3: "payment-gateway",
+                4: "order-datastore"}
+
+
+def _narrate(analysis: Analysis, provider) -> tuple[dict, str]:
+    """Narration must never be able to break detection.
+
+    The incident card is already complete without it, so any failure here
+    degrades to the deterministic renderer rather than propagating.
+    """
+    from app.narrative.evidence import build_evidence
+    from app.narrative.provider import build, runbook_for
+
+    try:
+        evidence = build_evidence(analysis, DOMAIN_NAMES, DOMAIN_KINDS)
+        fields, source = build(evidence, provider)
+        fields["runbook"] = runbook_for(evidence.failure_domain_kind)
+        return fields, source
+    except Exception:
+        log.exception("narration failed entirely; incident is unaffected")
+        return {}, "unavailable"
+
+
 async def analyse_and_persist(
-    conn: AsyncConnection, incident: Incident, profile: DetectionProfile
+    conn: AsyncConnection, incident: Incident, profile: DetectionProfile,
+    provider=None,
 ) -> Analysis | None:
     analysis = await analyse(conn, incident, profile)
     if analysis is None:
         return None
 
     a = analysis.attribution
+
+    narrative, narrative_source = _narrate(analysis, provider)
+
     await conn.execute(_PERSIST, {
         "id": incident.id,
         "verdict": a.verdict,
@@ -173,6 +209,8 @@ async def analyse_and_persist(
         "concentration": json.dumps([c.as_dict() for c in analysis.concentration]),
         "primary_dimension": analysis.primary_dimension,
         "primary_cohort": analysis.primary_cohort,
+        "narrative": json.dumps(narrative),
+        "narrative_source": narrative_source,
     })
 
     log.info(

@@ -506,3 +506,54 @@ details.drawer > summary {
   color: var(--muted);
   font-size: 13px;
 }
+
+/* --- narrative & runbook --- */
+.narrative {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--page);
+  border: 1px solid var(--border);
+}
+
+.narrative p {
+  margin: 0 0 6px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.narrative p:last-of-type {
+  margin-bottom: 0;
+}
+
+.narrative-source {
+  margin-top: 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.runbook {
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+
+.runbook-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.runbook ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+}
+
+.runbook li {
+  margin-bottom: 3px;
+}

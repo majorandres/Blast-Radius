@@ -79,6 +79,7 @@ async def debug_checkout(
         promo_client=state["promo"],
         promo_base_url=settings.promo_provider_url,
         promo_timeout_ms=settings.promo_client_timeout_ms,
+        payment_faults=get_faults().payment,
     )
     return {
         "order_id": str(result.order_id),

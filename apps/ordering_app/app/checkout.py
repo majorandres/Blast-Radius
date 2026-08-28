@@ -84,6 +84,7 @@ async def run_checkout(
     promo_client: httpx.AsyncClient,
     promo_base_url: str,
     promo_timeout_ms: int,
+    payment_faults=None,
 ) -> CheckoutResult:
     with blastradius_span(
         tracer,
@@ -127,7 +128,7 @@ async def run_checkout(
                         order.channel,
                     )
 
-                await payment.authorize(rng, order.payment_method)
+                await payment.authorize(rng, order.payment_method, payment_faults)
 
                 await db.persist_order(
                     conn,

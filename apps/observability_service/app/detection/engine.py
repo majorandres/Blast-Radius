@@ -26,8 +26,9 @@ log = logging.getLogger(__name__)
 
 
 class DetectionEngine:
-    def __init__(self, profile: DetectionProfile) -> None:
+    def __init__(self, profile: DetectionProfile, narrative_provider=None) -> None:
         self._profile = profile
+        self._narrative_provider = narrative_provider
         self._tracker = IncidentTracker(
             breach_persistence=profile.breach_persistence,
             recovery_persistence=profile.recovery_persistence,
@@ -104,7 +105,7 @@ class DetectionEngine:
             # so the diagnosis sharpens; the baseline it is measured against
             # was frozen at open and never moves.
             if incident is not None and incident.state in ("OPEN", "RECOVERING"):
-                await analyse_and_persist(conn, incident, p)
+                await analyse_and_persist(conn, incident, p, self._narrative_provider)
             await conn.commit()
 
         self._last_evaluation = evaluation
