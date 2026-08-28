@@ -1,0 +1,87 @@
+# Blast Radius -- Day 1 telemetry spine.
+# Services are added as build steps land: `migrate` and `observability-service`
+# arrive at steps 3 and 5 respectively.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"   # UI
+      - "4318:4318"     # OTLP/HTTP
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:14269/"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  promo-provider:
+    build:
+      context: .
+      dockerfile: apps/promo_provider/Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8002
+    environment:
+      OTLP_ENDPOINT: ${OTLP_ENDPOINT}
+      OBSERVABILITY_INGEST_URL: ${OBSERVABILITY_INGEST_URL}
+    ports:
+      - "8002:8002"
+    depends_on:
+      jaeger:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/readyz').status==200 else 1)\""]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  ordering-app:
+    build:
+      context: .
+      dockerfile: apps/ordering_app/Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001
+    environment:
+      DATABASE_URL_APP: ${DATABASE_URL_APP}
+      OBSERVABILITY_INGEST_URL: ${OBSERVABILITY_INGEST_URL}
+      PROMO_PROVIDER_URL: ${PROMO_PROVIDER_URL}
+      OTLP_ENDPOINT: ${OTLP_ENDPOINT}
+      TRAFFIC_ENABLED: ${TRAFFIC_ENABLED}
+      TRAFFIC_BASE_RATE_PER_MIN: ${TRAFFIC_BASE_RATE_PER_MIN}
+      TRAFFIC_SEED: ${TRAFFIC_SEED}
+      TRAFFIC_MAX_CONCURRENCY: ${TRAFFIC_MAX_CONCURRENCY}
+      DB_POOL_SIZE: ${DB_POOL_SIZE}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT}
+      PROMO_CLIENT_TIMEOUT_MS: ${PROMO_CLIENT_TIMEOUT_MS}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      promo-provider:
+        condition: service_healthy
+      jaeger:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/readyz').status==200 else 1)\""]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  pgdata:
