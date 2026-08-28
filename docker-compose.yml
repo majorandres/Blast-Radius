@@ -19,6 +19,20 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  migrate:
+    build:
+      context: .
+      dockerfile: migrations/Dockerfile
+    environment:
+      DATABASE_URL_MIGRATE: ${DATABASE_URL_MIGRATE}
+      BLASTRADIUS_APP_PASSWORD: ${BLASTRADIUS_APP_PASSWORD}
+      BLASTRADIUS_DETECTOR_PASSWORD: ${BLASTRADIUS_DETECTOR_PASSWORD}
+      BLASTRADIUS_SCENARIO_PASSWORD: ${BLASTRADIUS_SCENARIO_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   jaeger:
     image: jaegertracing/all-in-one:1.62.0
     environment:
@@ -73,6 +87,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       promo-provider:
         condition: service_healthy
       jaeger:
