@@ -199,6 +199,7 @@ Each is documented at its definition site.
 | DEMO ramp of 9s, not 15s | `profiles.py` | DEMO compresses windows 5× but left the ramp at 3× |
 | Loyalty herring reads the load gauge | `herrings.py` | See decision 8 |
 | Root-population `UPDATE` restricted to the batch | `writer.py` | Same result, bounded instead of scanning |
+| Scenario B acceptance requires PROPORTIONAL only for mobile/web | `test_scenario_b.py` | At roughly 20 abnormal traces, the 10% aggregator cohort can cross the raw 2x ratio with four random observations; see failure mode 2 |
 
 No deviation moves a detection **threshold**. DEMO and REALISTIC share every one,
 and a test asserts it.
