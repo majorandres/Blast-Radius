@@ -6,7 +6,7 @@ The checkout breaks in realistic ways. Blast Radius works out **what** broke
 and **which customers were affected** without receiving the injected answer.
 Reveal scores the diagnosis only after the detector has committed to it.
 
-![Blast Radius diagnosing promo-provider, measuring affected cohorts, and receiving a CORRECT reveal score](docs/assets/blast-radius-revealed.png)
+![Blast Radius receiving a blind fault, diagnosing promo-provider and the affected promotion cohort, then receiving a CORRECT reveal score](docs/assets/blast-radius-demo.gif)
 
 **Fresh empty-volume verification:** 7 runtime containers up, 6/6 configured
 healthchecks passing, 201 tests green, a named failure domain in 23 seconds,
