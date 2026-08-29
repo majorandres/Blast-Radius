@@ -191,6 +191,7 @@ Each is documented at its definition site.
 | Attribute constants and OTel helpers in `packages/contracts` | `attributes.py`, `otel.py` | Three mirrored copies of strings Day 2 depends on is a drift hazard |
 | `blastradius.parent_span_id` + header | `otel.py` | Five auto-instrumentation spans sit between `promo.apply` and `promo.handle` |
 | Exporter drops spans lacking a domain | `exporter.py` | Keeps auto spans in Jaeger and out of the detector |
+| Optional Claude narrative provider makes an outbound call | `provider.py` | §3's zero-outbound statement conflicts with §17's real-provider requirement; the default no-key path stays offline and the provider receives derived evidence only |
 | `checkout` is a manual, unconditional root | `checkout.py` | See decision 9 |
 | Incident window starts at first breach | `analysis.py` | See decision 10 |
 | Attribution floor of five traces | `attribution.py` | See decision 7 |

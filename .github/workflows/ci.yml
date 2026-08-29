@@ -5,6 +5,11 @@ on:
     branches: [main, master]
   pull_request:
 
+# Keep Compose-generated resource names stable on developer machines and on
+# GitHub's `Blast-Radius` checkout path. The browser smoke joins this network.
+env:
+  COMPOSE_PROJECT_NAME: blastradius
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -25,7 +30,7 @@ jobs:
           # so reaching "healthy" already proves the schema, roles, grants and
           # seed applied on an empty volume.
           timeout 180 bash -c 'until [ "$(docker compose ps --format "{{.Health}}" \
-            | grep -c healthy)" -ge 5 ]; do sleep 3; done'
+            | grep -c healthy)" -ge 6 ]; do sleep 3; done'
           docker compose ps
 
       - name: Let a baseline accumulate

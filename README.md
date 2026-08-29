@@ -1,19 +1,49 @@
 # Blast Radius
 
-A synthetic e-commerce checkout that breaks in realistic ways, and an
-observability service that works out **what** broke and **who it hit** — without
-ever being told.
+A telemetry-only incident investigator for a synthetic e-commerce checkout.
 
-The second half of that sentence is the whole project. The detector holds no
-database grant, no import, no API path, and no timing signal from the component
-that injects faults. It reaches its conclusion from telemetry alone, it can be
+The checkout breaks in realistic ways. Blast Radius works out **what** broke
+and **which customers were affected** without receiving the injected answer.
+Reveal scores the diagnosis only after the detector has committed to it.
+
+![Blast Radius diagnosing promo-provider, measuring affected cohorts, and receiving a CORRECT reveal score](docs/assets/blast-radius-revealed.png)
+
+**Fresh empty-volume verification:** 7 runtime containers up, 6/6 configured
+healthchecks passing, 201 tests green, a named failure domain in 23 seconds,
+the blast radius in 31 seconds, and Reveal → **CORRECT**.
+
+## Why I built it
+
+An alert saying "checkout is failing" is only the beginning of an incident.
+An engineer still needs to identify the responsible dependency, understand
+whether every customer is affected or one cohort is concentrated among the
+failures, and decide where to investigate first.
+
+Blast Radius is a checkable experiment in automating that reasoning. The
+detector is isolated from scenario state by database permissions, source-level
+import checks, and the absence of any controller API client. Its conclusions
+come from traces, can be wrong, and say so when the evidence is insufficient.
+
+## At a glance
+
+| Area | Implementation |
+| --- | --- |
+| Front end | React dashboard with topology, SLO charts, evidence, and reveal scoring |
+| Back end | Four FastAPI services with async traffic and real HTTP boundaries |
+| Data | PostgreSQL with three roles enforcing the detector/injector boundary |
+| Observability | OpenTelemetry, W3C trace propagation, Jaeger, SLO detection, attribution |
+| Reliability | Fault injection, reset fencing, healthy soaks, honest ambiguity and misses |
+| Verification | 201 pytest tests, including live end-to-end scenarios, plus browser smoke |
+
+That enforced isolation is the whole project. The detector holds no database
+grant, no import, no API path, and no timing signal from the component that
+injects faults. It reaches its conclusion from telemetry alone, it can be
 wrong, and it says so when it is.
 
 ```text
-click Inject  →  13s  first SLO breach
-                 16s  incident opens, baseline frozen
-                 22s  ATTRIBUTED: promo-provider, with the blast radius
-                 28s  on screen, including poll latency
+click Inject  →  23s named domain  →  31s blast radius  →  Reveal
+                                                            ↓
+                                                         CORRECT
 ```
 
 Then click **Reveal** to score it against ground truth the detector cannot read.
@@ -67,10 +97,10 @@ Everyone was hit; payment method explains it. Collapse those into one severity
 column and the incident points you at "all channels", where there is nothing to
 find.
 
-**Explains.** An optional Claude-generated narrative, validated against the
-evidence before display. **The app is fully functional with no API key** — a
-deterministic renderer produces the same claims from the same evidence, and the
-UI always labels which one you are reading.
+**Explains.** The default, no-key path renders a deterministic narrative from
+the evidence. An optional Claude provider can replace the prose, but its output
+is validated before display. **The app is fully functional with no API key**,
+and the UI always labels which source produced the text.
 
 ---
 

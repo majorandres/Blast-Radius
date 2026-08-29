@@ -23,14 +23,15 @@ at the definition site and collected in `docs/DECISIONS.md`.
 
 ## State: built and verified
 
-18 commits, all five planned days complete, verified from an empty volume:
+All five planned days are complete and the release candidate was freshly
+verified from an empty volume:
 
 - **201 tests green** — 153 observability (including two live end-to-end scenario
   runs), 34 scenario-controller, 14 ordering-app.
-- **Browser loop closes**: click Inject → 23s to a named domain → 30s to the
+- **Browser loop closes**: click Inject → 23s to a named domain → 31s to the
   blast radius → Reveal → CORRECT.
-- All 19 boxes of the contract's §26 MVP checklist are closed except the demo
-  video, which is a human task.
+- All 19 non-video boxes of the contract's §26 MVP checklist are closed. The
+  demo video remains a human task.
 
 ## Read these first, in this order
 
@@ -111,8 +112,8 @@ file, which has already wasted time once.
    scenario runs, frozen as JSON, including at least one uniform-impact /
    latency-only case to exercise narrative prompt rules 6 and 8. Currently only
    two hand-written fixtures exist in `tests/test_narrative.py`.
-2. **CI has never executed.** `.github/workflows/ci.yml` is written but there is
-   no remote. It has not been proven to pass.
+2. **CI is not yet independently verified.** A GitHub remote is configured, but
+   the workflow's current Actions result has not been confirmed in this handoff.
 3. **Scenario C — pool saturation** (contract §16, §26 stretch). Defined in
    `apps/scenario_controller/app/scenarios.py` but deliberately gated out of
    `IMPLEMENTED`. §16.4 warns it can flip attribution to `promo-provider` when

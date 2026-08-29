@@ -39,8 +39,12 @@ The single arrow from controller to detector is a **read of the same public
 endpoint the browser polls**. Observability cannot distinguish it from a
 dashboard refresh, which is the only reason that direction is permitted at all.
 
-`observability-service` makes **zero** outbound calls. That is what makes the
-isolation claim checkable rather than asserted.
+`observability-service` makes **zero outbound calls to the injector or emitting
+services**. In the default no-key configuration it makes no outbound HTTP calls
+at all. The optional Claude narrative provider is the one exception: it sends
+only derived `NarrativeEvidence`, never spans, scenario identity, or ground
+truth. The detector/injector isolation claim remains checkable through database
+grants, the import lint, and the absence of a controller client or API path.
 
 ---
 
