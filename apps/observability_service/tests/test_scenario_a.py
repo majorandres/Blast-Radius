@@ -85,6 +85,8 @@ async def _wait_for_healthy_baseline(engine) -> tuple[float, int]:
             return rate, live_incidents
         await asyncio.sleep(5)
     return rate, live_incidents
+
+
 _INCIDENT = sa.text(
     """
     SELECT i.verdict::text AS verdict, d.name AS attributed_domain,
