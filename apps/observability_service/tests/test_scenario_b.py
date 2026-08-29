@@ -29,7 +29,16 @@ DETECTOR_URL = os.environ.get(
 )
 
 DIAGNOSIS_TIMEOUT_S = 200
-MIN_CANDIDATES = 40
+
+#: Lower than Scenario A's threshold, because B genuinely produces fewer
+#: abnormal traces and the difference is the scenario, not the detector.
+#: A degrades 35% of traffic *and* makes it slow, so nearly every promo trace
+#: is abnormal. B fails 55% of wallet payments only -- about 14% of checkouts --
+#: and adds just 200ms, which stays under the abnormal-latency threshold. So B
+#: accrues roughly 0.35 abnormal traces per second against a ramp-plus-hold
+#: window of about 99 seconds. Demanding 40 would be demanding more evidence
+#: than the scenario emits before the fault clears.
+MIN_CANDIDATES = 20
 BASELINE_WINDOW_S = 240
 HEALTHY_BASELINE_MAX_FAILURE_RATE = 0.02
 BASELINE_SETTLE_TIMEOUT_S = 320
