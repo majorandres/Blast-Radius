@@ -10,6 +10,7 @@ COPY migrations/pyproject.toml migrations/uv.lock /repo/migrations/
 RUN uv sync --frozen --no-install-project
 
 COPY migrations /repo/migrations
+RUN chmod +x /repo/migrations/entrypoint.sh
 RUN uv sync --frozen
 
 ENV PATH="/repo/migrations/.venv/bin:$PATH"
