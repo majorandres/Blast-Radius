@@ -23,7 +23,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 pytestmark = pytest.mark.slow
 
 CONTROLLER_URL = os.environ.get("SCENARIO_CONTROLLER_URL", "http://scenario-controller:8003")
-PROMO_URL = os.environ.get("PROMO_PROVIDER_URL_BASE", "http://promo-provider:8002")
 DETECTOR_URL = os.environ.get(
     "DATABASE_URL_DETECTOR",
     "postgresql+asyncpg://blastradius_detector:detector@postgres:5432/blastradius",
@@ -59,24 +58,33 @@ _BASELINE_HEALTH = sa.text(
     """
 )
 
+_LIVE_INCIDENTS = sa.text(
+    "SELECT count(*) FROM incident"
+    " WHERE state::text = ANY(ARRAY['PENDING','OPEN','RECOVERING'])"
+)
 
-async def _wait_for_healthy_baseline(engine) -> float:
+
+async def _wait_for_healthy_baseline(engine) -> tuple[float, int]:
     """Block until the last BASELINE_WINDOW_S of traffic is genuinely healthy."""
     loop = asyncio.get_event_loop()
     deadline = loop.time() + BASELINE_SETTLE_TIMEOUT_S
     rate = 1.0
+    live_incidents = 1
     while loop.time() < deadline:
         async with engine.connect() as conn:
             row = (await conn.execute(
                 _BASELINE_HEALTH, {"window_s": BASELINE_WINDOW_S}
             )).mappings().one()
+            live_incidents = int((await conn.execute(_LIVE_INCIDENTS)).scalar_one() or 0)
         rate = float(row["failure_rate"] or 0.0)
-        if int(row["n"] or 0) > 50 and rate <= HEALTHY_BASELINE_MAX_FAILURE_RATE:
-            return rate
+        if (
+            int(row["n"] or 0) > 50
+            and rate <= HEALTHY_BASELINE_MAX_FAILURE_RATE
+            and live_incidents == 0
+        ):
+            return rate, live_incidents
         await asyncio.sleep(5)
-    return rate
-QUIESCE_TIMEOUT_S = 90
-
+    return rate, live_incidents
 _INCIDENT = sa.text(
     """
     SELECT i.verdict::text AS verdict, d.name AS attributed_domain,
@@ -108,22 +116,16 @@ async def diagnosis():
     engine = create_async_engine(DETECTOR_URL)
     async with AsyncClient(timeout=30) as client:
         try:
-            # Start from a clean slate: no fault applied, no incident open.
-            await client.put(f"{PROMO_URL}/_faults", json={})
-            current = (await client.get(f"{CONTROLLER_URL}/api/scenarios/current")).json()
-            if current:
-                await client.post(f"{CONTROLLER_URL}/api/scenarios/{current['id']}/stop")
-            await _wait_for(
-                engine,
-                lambda r: r is None or r["state"] == "CLOSED",
-                QUIESCE_TIMEOUT_S,
-            )
+            await client.post(f"{CONTROLLER_URL}/api/reset")
 
-            baseline_rate = await _wait_for_healthy_baseline(engine)
+            baseline_rate, live_incidents = await _wait_for_healthy_baseline(engine)
             assert baseline_rate <= HEALTHY_BASELINE_MAX_FAILURE_RATE, (
                 f"baseline window still shows {baseline_rate:.2%} failures after "
                 f"{BASELINE_SETTLE_TIMEOUT_S}s; the incident would be measured "
                 "against a degraded baseline"
+            )
+            assert live_incidents == 0, (
+                f"{live_incidents} incident(s) still live; a new one cannot form"
             )
 
             response = await client.post(
@@ -155,10 +157,7 @@ async def diagnosis():
             )
             yield run, row
         finally:
-            current = (await client.get(f"{CONTROLLER_URL}/api/scenarios/current")).json()
-            if current:
-                await client.post(f"{CONTROLLER_URL}/api/scenarios/{current['id']}/stop")
-            await client.put(f"{PROMO_URL}/_faults", json={})
+            await client.post(f"{CONTROLLER_URL}/api/reset")
             await engine.dispose()
 
 
